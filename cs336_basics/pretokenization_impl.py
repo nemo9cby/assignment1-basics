@@ -3,6 +3,7 @@ import os
 from typing import BinaryIO
 from pretokenization_example import pretokenize_sequential
 import time
+from multiprocessing import Pool
 
 def find_chunk_boundaries(
     file: BinaryIO, 
@@ -66,7 +67,7 @@ def process_chunk(chunk_info) -> Counter: # need to change the parameter to a tu
         # Read the chunk from start to end
         chunk = f.read(end - start).decode("utf-8", errors="ignore")
 
-        pre_tokens = chunk.split()
+        pre_tokens = chunk.split() 
         pre_token_count = Counter(pre_tokens)
 
         return pre_token_count
@@ -78,7 +79,6 @@ def combine_counters(counter_list: list[Counter]) -> Counter:
         combined.update(counter)
     return combined
 
-from multiprocessing import Pool
 
 def main(filepath: str, num_processes: int = 1) -> Counter:
     
