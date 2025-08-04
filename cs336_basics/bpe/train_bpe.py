@@ -1,3 +1,4 @@
+from typing import Dict, List, Tuple
 from cs336_basics.pretokenization_example import find_chunk_boundaries
 # from cs336_basics.pretokenization_impl import pretokenize_sequential
 from multiprocessing import Pool
@@ -5,6 +6,7 @@ from collections import Counter
 import regex as re
 from collections import defaultdict
 import heapq
+import json
 
 def train_bpe(input_path, vocab_size=1000, special_tokens=None):
     vocab = {}
@@ -22,7 +24,7 @@ def train_bpe(input_path, vocab_size=1000, special_tokens=None):
     
     merges = []
     params = []
-    num_processes = 1  # Adjust as needed
+    num_processes = 8  # Adjust as needed
     with open(input_path, "rb") as f:
         boundaries = find_chunk_boundaries(
             f, num_processes, "<|endoftext|>".encode("utf-8"))
@@ -35,10 +37,12 @@ def train_bpe(input_path, vocab_size=1000, special_tokens=None):
             param = (f.name, start, end, special_tokens)
             params.append(param)
             
-    # with Pool(num_processes) as p:
-    #     results = p.map(process_chunk, params) # if i dont add results, it will prompt errors
+    with Pool(num_processes) as p:
+        results = p.map(process_chunk, params) # if i dont add results, it will prompt errors
     pre_token_counter = Counter()
-    pre_token_counter = process_chunk(params[0])
+    for counter in results:
+        pre_token_counter.update(counter)
+    # pre_token_counter = process_chunk(params[0])
     # for start, end in zip(boundaries[:-1], boundaries[1:]):
     #         f.seek(start)
     #         chunk = f.read(end - start).decode("utf-8", errors="ignore")
@@ -101,7 +105,7 @@ def merge(input_vocab, pre_tokens, num_merges):
         # negative_count, _, pair_to_be_merged = heapq.heappop(heap)
         pair_to_be_merged_iter = max(successive_pair_count, key=lambda pair: (successive_pair_count[pair], pair))
 
-        print(len(merges), "merges found so far")
+        # print(len(merges), "merges found so far")
         
         while heap:
             neg_count, neg_pair, pair = heapq.heappop(heap)
@@ -258,6 +262,74 @@ def process_chunk(chunk_info) -> Counter: # need to change the parameter to a tu
                     pre_token_count[byte_tuple] += 1
 
         return pre_token_count
+    
+
+def serialize_bpe_standard(vocab: Dict[int, bytes], merges: List[Tuple[bytes, bytes]], 
+                          vocab_path: str, merges_path: str):
+    """
+    Serialize vocab and merges in the standard BPE format used by 
+    Hugging Face, OpenAI GPT-2, etc.
+    
+    Args:
+        vocab: Dict mapping token IDs to token bytes
+        merges: List of merge rules as (token1_bytes, token2_bytes) tuples
+        vocab_path: Path to save vocab.json
+        merges_path: Path to save merges.txt
+    """
+    
+    # 1. Create vocab.json (token_string -> token_id)
+    vocab_dict = {}
+    for token_id, token_bytes in vocab.items():
+        try:
+            # Try to decode as UTF-8 first
+            token_str = token_bytes.decode('utf-8')
+        except UnicodeDecodeError:
+            # Fall back to latin-1 for byte-level tokens
+            token_str = token_bytes.decode('latin-1')
+        vocab_dict[token_str] = token_id
+    
+    # Save vocab.json
+    with open(vocab_path, 'w', encoding='utf-8') as f:
+        json.dump(vocab_dict, f, indent=2, ensure_ascii=False)
+    
+    # 2. Create merges.txt (space-separated merge pairs)
+    with open(merges_path, 'w', encoding='utf-8') as f:
+        for merge1_bytes, merge2_bytes in merges:
+            try:
+                # Try UTF-8 first
+                token1 = merge1_bytes.decode('utf-8')
+                token2 = merge2_bytes.decode('utf-8')
+            except UnicodeDecodeError:
+                # Fall back to latin-1
+                token1 = merge1_bytes.decode('latin-1')
+                token2 = merge2_bytes.decode('latin-1')
+            
+            f.write(f"{token1} {token2}\n")
+    
+    print(f"Saved vocab to {vocab_path} ({len(vocab_dict)} tokens)")
+    print(f"Saved merges to {merges_path} ({len(merges)} merge rules)")
+
+
+
+def save_trained_tokenizer(vocab, merges, output_dir="./tokenizer_output"):
+    """Save your trained BPE tokenizer in standard format"""
+    import os
+    os.makedirs(output_dir, exist_ok=True)
+    
+    vocab_path = os.path.join(output_dir, "vocab.json")
+    merges_path = os.path.join(output_dir, "merges.txt")
+    
+    serialize_bpe_standard(vocab, merges, vocab_path, merges_path)
+    
+    # Inspect the results
+    # print("\n--- Vocabulary Inspection ---")
+    # inspect_vocab(vocab_path)
+    
+    # print("\n--- Merges Inspection ---")
+    # inspect_merges(merges_path)
+    
+    return vocab_path, merges_path
+
 
 if __name__ == "__main__":
     import sys
@@ -268,4 +340,7 @@ if __name__ == "__main__":
     input_file = sys.argv[1]
     vocab_size = int(sys.argv[2]) if len(sys.argv) > 2 else 1000
 
-    train_bpe(input_path=input_file, vocab_size=vocab_size, special_tokens=["<|endoftext|>"])
+    vocab, merges = train_bpe(input_path=input_file, vocab_size=vocab_size, special_tokens=["<|endoftext|>"])
+    save_trained_tokenizer(vocab, merges, output_dir="./tokenizer_output")
+    
+    
