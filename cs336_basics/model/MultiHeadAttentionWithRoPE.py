@@ -40,27 +40,30 @@ class MultiHeadAttentionWithRoPE(nn.Module):
         K = K.reshape(batch_size, seq_len, self.num_heads, self.d_k).transpose(1, 2)
         V = V.reshape(batch_size, seq_len, self.num_heads, self.d_k).transpose(1, 2)
         
-        # Apply RoPE to Q and K for each head
-        # RoPE expects shape: (..., seq_len, d_k)
-        # We need to apply it per head, so reshape accordingly
-        Q_rotated = []
-        K_rotated = []
+        # Apply RoPE to Q and K for all heads in parallel
+        # Current shape: (batch_size, num_heads, seq_len, d_k)
+        # RoPE expects: (..., seq_len, d_k)
+        # We can reshape to apply RoPE to all heads at once
         
-        for head_idx in range(self.num_heads):
-            # Extract head: (batch_size, seq_len, d_k)
-            Q_head = Q[:, head_idx, :, :]
-            K_head = K[:, head_idx, :, :]
-            
-            # Apply RoPE
-            Q_head_rotated = self.rope(Q_head, token_positions)
-            K_head_rotated = self.rope(K_head, token_positions)
-            
-            Q_rotated.append(Q_head_rotated)
-            K_rotated.append(K_head_rotated)
+        # Merge batch and head dimensions for vectorized RoPE application
+        batch_size_heads = batch_size * self.num_heads
+        Q_merged = Q.reshape(batch_size_heads, seq_len, self.d_k)
+        K_merged = K.reshape(batch_size_heads, seq_len, self.d_k)
         
-        # Stack rotated heads back
-        Q = torch.stack(Q_rotated, dim=1)  # (batch_size, num_heads, seq_len, d_k)
-        K = torch.stack(K_rotated, dim=1)  # (batch_size, num_heads, seq_len, d_k)
+        # Expand token_positions to match the merged batch dimension
+        # Original: (batch_size, seq_len)
+        # Need: (batch_size * num_heads, seq_len)
+        token_positions_expanded = token_positions.unsqueeze(1).expand(
+            batch_size, self.num_heads, seq_len
+        ).reshape(batch_size_heads, seq_len)
+        
+        # Apply RoPE to all heads at once
+        Q_rotated = self.rope(Q_merged, token_positions_expanded)
+        K_rotated = self.rope(K_merged, token_positions_expanded)
+        
+        # Reshape back to separate head dimension
+        Q = Q_rotated.reshape(batch_size, self.num_heads, seq_len, self.d_k)
+        K = K_rotated.reshape(batch_size, self.num_heads, seq_len, self.d_k)
         
         # Create causal mask
         mask = torch.tril(torch.ones(seq_len, seq_len, device=in_features.device), diagonal=0).bool()
