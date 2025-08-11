@@ -40,8 +40,16 @@ def cross_entropy(
     Returns:
         The average cross-entropy loss across examples.
     """
-    raise NotImplementedError
+    x_max = torch.max(inputs, dim=-1, keepdim=True)[0]
+    x_exp = torch.exp(inputs - x_max)
+    x_sum = torch.sum(x_exp, dim=-1, keepdim=True)
+    log_x_sum = x_sum.log()
+    log_logits = inputs - x_max - log_x_sum
+    target_log_probs = torch.gather(log_logits, dim=1, index=targets.unsqueeze(1)).squeeze(1)
+    loss = -target_log_probs.mean()
+    return loss
 
+    
 # def scaled_dot_product_attention(q, k, v, mask):
 #     q = q.reshape(-1, q.shape[-2], q.shape[-1])
 #     k = k.reshape(-1, k.shape[-2], k.shape[-1])
