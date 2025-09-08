@@ -4,6 +4,8 @@ import torch
 from torch import Tensor
 from jaxtyping import Float, Int
 import numpy as np
+import numpy.typing as npt
+
 
 def softmax(in_features: Float[Tensor, "..."], dim: int) -> Float[Tensor, "..."]:
     """
@@ -81,3 +83,8 @@ def scaled_dot_product_attention(q, k, v, mask):
     # Reshape output to match the original input shape
     output = output.reshape(*original_shape[:-2], -1, original_shape[-1])
     return output
+
+
+def dataloader(dataset: npt.NDArray, batch_size: int, context_length: int, device: str):
+    
+    pass

@@ -277,16 +277,15 @@ def serialize_bpe_standard(vocab: Dict[int, bytes], merges: List[Tuple[bytes, by
         merges_path: Path to save merges.txt
     """
     
+    # Create the byte-to-unicode mapping
+    byte_to_unicode = create_byte_to_unicode()
+    
     # 1. Create vocab.json (token_string -> token_id)
     vocab_dict = {}
     for token_id, token_bytes in vocab.items():
-        try:
-            # Try to decode as UTF-8 first
-            token_str = token_bytes.decode('utf-8')
-        except UnicodeDecodeError:
-            # Fall back to latin-1 for byte-level tokens
-            token_str = token_bytes.decode('latin-1')
-        vocab_dict[token_str] = token_id
+        # Convert each byte to its unicode representation
+        token_str = ''.join(byte_to_unicode[b] for b in token_bytes)
+        vocab_dict[token_id] = token_str
     
     # Save vocab.json
     with open(vocab_path, 'w', encoding='utf-8') as f:
@@ -294,21 +293,42 @@ def serialize_bpe_standard(vocab: Dict[int, bytes], merges: List[Tuple[bytes, by
     
     # 2. Create merges.txt (space-separated merge pairs)
     with open(merges_path, 'w', encoding='utf-8') as f:
+        # Optional: Write version header (GPT-2 style)
+        # f.write("#version: 0.2\n")
+        
         for merge1_bytes, merge2_bytes in merges:
-            try:
-                # Try UTF-8 first
-                token1 = merge1_bytes.decode('utf-8')
-                token2 = merge2_bytes.decode('utf-8')
-            except UnicodeDecodeError:
-                # Fall back to latin-1
-                token1 = merge1_bytes.decode('latin-1')
-                token2 = merge2_bytes.decode('latin-1')
+            # Convert bytes to unicode representation
+            token1 = ''.join(byte_to_unicode[b] for b in merge1_bytes)
+            token2 = ''.join(byte_to_unicode[b] for b in merge2_bytes)
             
             f.write(f"{token1} {token2}\n")
     
     print(f"Saved vocab to {vocab_path} ({len(vocab_dict)} tokens)")
     print(f"Saved merges to {merges_path} ({len(merges)} merge rules)")
 
+
+
+def create_byte_to_unicode():
+    """
+    Create a mapping from every byte (0-255) to a unique Unicode character.
+    This is the standard mapping used by GPT-2 and HuggingFace tokenizers.
+    """
+    # Start with printable characters (excluding some problematic ones)
+    bs = list(range(ord("!"), ord("~")+1)) + \
+         list(range(ord("¡"), ord("¬")+1)) + \
+         list(range(ord("®"), ord("ÿ")+1))
+    
+    cs = bs[:]
+    n = 0
+    
+    # Map remaining bytes to unused Unicode code points
+    for b in range(256):
+        if b not in bs:
+            bs.append(b)
+            cs.append(256 + n)
+            n += 1
+    
+    return dict(zip(bs, [chr(c) for c in cs]))
 
 
 def save_trained_tokenizer(vocab, merges, output_dir="./tokenizer_output"):
@@ -333,14 +353,22 @@ def save_trained_tokenizer(vocab, merges, output_dir="./tokenizer_output"):
 
 if __name__ == "__main__":
     import sys
+    import time
     if len(sys.argv) < 2:
         print("Usage: python train_bpe.py <input_file> [<vocab_size>]")
         sys.exit(1)
 
     input_file = sys.argv[1]
     vocab_size = int(sys.argv[2]) if len(sys.argv) > 2 else 1000
+    output_loca = sys.argv[3] if len(sys.argv) > 3 else ""
+    output = f"./tokenizer_output/{output_loca}"
+    start_time = time.time()
 
     vocab, merges = train_bpe(input_path=input_file, vocab_size=vocab_size, special_tokens=["<|endoftext|>"])
-    save_trained_tokenizer(vocab, merges, output_dir="./tokenizer_output")
-    
+    save_trained_tokenizer(vocab, merges, output_dir=output)
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    print(f"Elapsed time: {elapsed_time:.4f} seconds")
+
+
     
