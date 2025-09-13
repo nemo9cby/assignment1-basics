@@ -5,7 +5,20 @@ from torch import Tensor
 from jaxtyping import Float, Int
 import numpy as np
 import numpy.typing as npt
+from math import cos, pi
 
+
+def cosine_lr_schedule_with_warmup(cur_step: int, a_max: float, a_min: float, t_w: int, t_c: int):
+
+    a_t = 0
+    if cur_step < t_w:
+        a_t =  (a_max * cur_step) / t_w
+    elif  cur_step <= t_c:
+        a_t = a_min + 0.5*(1 + cos(pi*float(cur_step-t_w)/(t_c-t_w)))*(a_max - a_min)
+    else:
+        a_t = a_min
+    
+    return a_t
 
 def softmax(in_features: Float[Tensor, "..."], dim: int) -> Float[Tensor, "..."]:
     """
