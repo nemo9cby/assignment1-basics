@@ -8,6 +8,24 @@ import numpy.typing as npt
 from math import cos, pi
 
 
+def gradient_clipping(params, max_norm, epsilon=1e-6):
+    total_norm = torch.sqrt(
+        sum(torch.sum(p.grad ** 2) for p in params if p.grad is not None)
+    )
+
+    if total_norm > max_norm:
+    # Scale factor to bring norm down to max_norm
+        scale_factor = max_norm / float(total_norm + epsilon)
+    
+    # Apply to ALL parameters at once (vectorized)
+    for param in params:
+        if param.grad is not None:
+            param.grad.mul_(scale_factor)  # In-place multiplication
+
+
+        
+
+
 def cosine_lr_schedule_with_warmup(cur_step: int, a_max: float, a_min: float, t_w: int, t_c: int):
 
     a_t = 0
