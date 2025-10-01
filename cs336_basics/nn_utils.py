@@ -117,5 +117,18 @@ def scaled_dot_product_attention(q, k, v, mask):
 
 
 def dataloader(dataset: npt.NDArray, batch_size: int, context_length: int, device: str):
+    total_size = len(dataset)
+    end_index = total_size - context_length
+
+    start_indices = np.random.choice(end_index, size=batch_size, replace=False)
+    inputs = torch.zeros(batch_size, context_length, dtype=torch.long, device=device)
+    targets = torch.zeros(batch_size, context_length, dtype=torch.long, device=device)
+
+    for idx, start in enumerate(start_indices):
+        inputs[idx] = torch.tensor(dataset[start:start+context_length], dtype=torch.long, device=device)
+        targets[idx] = torch.tensor(dataset[start+1:start+context_length+1], dtype=torch.long, device=device)
     
-    pass
+    return inputs, targets
+
+    
+    
