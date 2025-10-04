@@ -50,10 +50,18 @@ class Tokenizer:
                 # Find the special token in the vocabulary
                 # Special tokens are usually stored as-is in vocab.json
                 special_token_bytes = special_token.encode('utf-8')
-                if special_token_bytes in self.vocab_bytes_to_id:
-                    self.special_tokens_dict[special_token] = self.vocab_bytes_to_id[special_token_bytes]
-                else:
-                    raise ValueError(f"Special token '{special_token}' not found in vocabulary")
+
+                # Look for the special token in the vocabulary
+                found = False
+                for token_id, token_bytes in self.vocab.items():
+                    if token_bytes == special_token_bytes:
+                        self.special_tokens_dict[special_token] = token_id
+                        found = True
+                        break
+
+                if not found:
+                    print(f"Warning: Special token '{special_token}' not found in vocabulary")
+                    # Don't raise an error - the tokenizer can still work without all special tokens
     
 
         self.merge_priorities = {merge: i for i, merge in enumerate(merges)}
@@ -70,10 +78,33 @@ class Tokenizer:
             vocab_json = json.load(f)
         
         vocab = {}
-        
-        for token_str, token_id in vocab_json.items():
-            # Convert unicode string back to bytes
-            token_bytes = bytes([unicode_to_byte[c] for c in token_str])
+
+        # vocab_json has structure: {"id_as_string": "token_string"}
+        # We need to convert: id (as int) -> token (as bytes)
+        for token_id_str, token_str in vocab_json.items():
+            token_id = int(token_id_str)  # Convert string ID to integer
+            # Check if this is a special token (contains characters not in byte mapping)
+            # Special tokens are saved as-is in the vocab and don't use byte-to-unicode encoding
+            is_special_token = False
+            if special_tokens:
+                for special_token in special_tokens:
+                    if token_str == special_token:
+                        is_special_token = True
+                        break
+
+            if is_special_token:
+                # Special tokens are stored directly as UTF-8 bytes
+                token_bytes = token_str.encode('utf-8')
+            else:
+                # Regular tokens use the byte-to-unicode mapping
+                try:
+                    token_bytes = bytes([unicode_to_byte[c] for c in token_str])
+                except KeyError:
+                    # If we can't decode with unicode_to_byte, it might be a special token
+                    # that wasn't in our special_tokens list
+                    print(f"Warning: Token '{token_str}' cannot be decoded with byte mapping, treating as special token")
+                    token_bytes = token_str.encode('utf-8')
+
             vocab[token_id] = token_bytes
 
         # 2. Load merges.txt
