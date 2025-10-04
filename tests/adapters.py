@@ -37,7 +37,6 @@ def run_linear(
 
     return linear(in_features)
 
-    # raise NotImplementedError
 
 
 def run_embedding(
@@ -64,7 +63,6 @@ def run_embedding(
     embed.load_state_dict({"weights": weights})
     
     return embed(token_ids)
-    # raise NotImplementedError
 
 
 def run_swiglu(
@@ -102,8 +100,6 @@ def run_swiglu(
     swiglu.load_state_dict({"w1": w1_weight, "w2": w2_weight, "w3": w3_weight})
     return swiglu(in_features)
     
-    # raise NotImplementedError
-
 
 def run_scaled_dot_product_attention(
     Q: Float[Tensor, " ... queries d_k"],
@@ -125,7 +121,6 @@ def run_scaled_dot_product_attention(
     """
     from cs336_basics.nn_utils import scaled_dot_product_attention
     return scaled_dot_product_attention(Q, K, V, mask)
-    # raise NotImplementedError
 
 
 def run_multihead_self_attention(
@@ -175,9 +170,6 @@ def run_multihead_self_attention(
 
     return mha(in_features)
     
-    
-    # raise NotImplementedError
-
 
 def run_multihead_self_attention_with_rope(
     d_model: int,
@@ -251,7 +243,6 @@ def run_rope(
     rope = RoPE(theta=theta, d_k=d_k, max_seq_len=max_seq_len)
     rotated_output = rope(in_query_or_key, token_positions)
     return rotated_output
-    # raise NotImplementedError
 
 
 def run_transformer_block(
@@ -470,7 +461,6 @@ def run_transformer_lm(
     return transformer(in_indices)
 
 
-    # raise NotImplementedError
 
 
 def run_rmsnorm(
@@ -498,7 +488,6 @@ def run_rmsnorm(
     rmsnorm.load_state_dict({"weights": weights})
     return rmsnorm(in_features)
 
-    # raise NotImplementedError
 
 
 def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
@@ -516,7 +505,6 @@ def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
     swiglu = SwiGLU(d_model=in_features.shape[-1])
     return swiglu.silu(in_features)
 
-    # raise NotImplementedError
 
 
 def run_get_batch(
@@ -576,7 +564,6 @@ def run_cross_entropy(inputs: Float[Tensor, " batch_size vocab_size"], targets: 
     """
     from cs336_basics.nn_utils import cross_entropy
     return cross_entropy(inputs, targets)
-    # raise NotImplementedError
 
 
 def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: float) -> None:
@@ -648,7 +635,8 @@ def run_save_checkpoint(
             we've completed.
         out (str | os.PathLike | BinaryIO | IO[bytes]): Path or file-like object to serialize the model, optimizer, and iteration to.
     """
-    raise NotImplementedError
+    from cs336_basics.nn_utils import save_checkpoint
+    return save_checkpoint(model, optimizer, iteration, out)
 
 
 def run_load_checkpoint(
@@ -669,8 +657,9 @@ def run_load_checkpoint(
     Returns:
         int: the previously-serialized number of iterations.
     """
-    raise NotImplementedError
-
+    from cs336_basics.nn_utils import load_checkpoint
+    return load_checkpoint(model, optimizer, src)
+    
 
 def get_tokenizer(
     vocab: dict[int, bytes],
@@ -696,7 +685,6 @@ def get_tokenizer(
 
     return Tokenizer(vocab, merges, special_tokens)
     
-    # raise NotImplementedError
 
 
 def run_train_bpe(
@@ -733,4 +721,3 @@ def run_train_bpe(
         special_tokens=special_tokens,
         **kwargs,
     )
-    # raise NotImplementedError
