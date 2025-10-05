@@ -8,6 +8,7 @@ from cs336_basics.AdamW import AdamW
 from cs336_basics.nn_utils import dataloader, cross_entropy, gradient_clipping
 from cs336_basics.bpe.train_bpe import train_bpe, save_trained_tokenizer
 from cs336_basics.bpe.Tokenizer import Tokenizer
+from cs336_basics.memmap_dataloader import MemmapDataLoader, StreamingMemmapDataLoader
 
 def get_or_train_tokenizer(
     train_data_path: str,
@@ -78,18 +79,22 @@ def get_or_train_tokenizer(
 def prepare_data(
     data_path: str,
     tokenizer: Tokenizer,
-    context_length: int
-) -> np.ndarray:
+    context_length: int,
+    use_streaming: bool = False,
+    cache_dir: str = "./data_cache"
+) -> MemmapDataLoader:
     """
-    Load and tokenize text data for training.
+    Create a memory-efficient dataloader for training.
 
     Args:
         data_path: Path to the text data file
         tokenizer: Tokenizer instance to use
         context_length: Required context length for validation
+        use_streaming: If True, use StreamingMemmapDataLoader for immediate training
+        cache_dir: Directory to store cached tokenized data
 
     Returns:
-        Numpy array of tokenized data
+        MemmapDataLoader instance
 
     Raises:
         ValueError: If not enough tokens for training
@@ -98,40 +103,43 @@ def prepare_data(
     print("DATA PREPARATION")
     print("=" * 60)
 
-    print(f"Loading and tokenizing data from {data_path}...")
+    print(f"Setting up memory-efficient dataloader for {data_path}...")
 
-    # Read the training data
-    with open(data_path, "r", encoding="utf-8") as f:
-        text_data = f.read()
-        # For testing, use only first 1MB of data
-        if len(text_data) > 1_000_000:
-            print(f"  Original text size: {len(text_data):,} characters")
-            text_data = text_data[:1_000_000]
-            print(f"  Using first 1,000,000 characters for testing")
+    # Choose dataloader type
+    if use_streaming:
+        print("  Using StreamingMemmapDataLoader (tokenize while training)")
+        dataloader = StreamingMemmapDataLoader(
+            data_path=data_path,
+            tokenizer=tokenizer,
+            cache_dir=cache_dir,
+            chunk_size=1_000_000,  # Tokenize 1MB chunks at a time
+            prefetch_chunks=10
+        )
+    else:
+        print("  Using MemmapDataLoader (tokenize first, then train)")
+        dataloader = MemmapDataLoader(
+            data_path=data_path,
+            tokenizer=tokenizer,
+            cache_dir=cache_dir,
+            chunk_size=1_000_000  # Tokenize 1MB chunks at a time
+        )
 
-    # Check data size
-    print(f"  Text data size: {len(text_data):,} characters")
-
-    # Tokenize the entire text
-    token_ids = tokenizer.encode(text_data)
-
-    # Convert to numpy array for use with dataloader
-    tokenized_data = np.array(token_ids, dtype=np.int64)
-
-    print(f"  Tokenized data size: {len(tokenized_data):,} tokens")
-    print(f"  Compression ratio: {len(text_data) / len(tokenized_data):.2f} chars/token")
+    # Get file size for reporting
+    file_size_mb = os.path.getsize(data_path) / (1024 * 1024)
+    print(f"  Data file size: {file_size_mb:.2f} MB")
+    print(f"  Total tokens: {len(dataloader):,}")
 
     # Verify we have enough data for training
     min_required_tokens = context_length + 1
-    if len(tokenized_data) < min_required_tokens:
+    if len(dataloader) < min_required_tokens:
         raise ValueError(
             f"Not enough tokens for training! "
-            f"Have {len(tokenized_data)}, need at least {min_required_tokens}"
+            f"Have {len(dataloader)}, need at least {min_required_tokens}"
         )
 
-    print(f"  ✓ Data ready for training")
+    print(f"  ✓ Data ready for training (memory-efficient mode)")
 
-    return tokenized_data
+    return dataloader
 
 
 def get_device():
@@ -164,7 +172,7 @@ def get_device():
 
 def train(
     model: TransformerLM,
-    tokenized_data: np.ndarray,
+    dataloader_obj: MemmapDataLoader,
     config: dict,
     device: torch.device,
     tokenizer: Tokenizer = None,  # Add tokenizer for testing
@@ -175,7 +183,7 @@ def train(
 
     Args:
         model: TransformerLM model to train
-        tokenized_data: Numpy array of tokenized training data
+        dataloader_obj: MemmapDataLoader instance for efficient data loading
         config: Dictionary with training configuration
         device: Device to train on
         tokenizer: Optional tokenizer for decoding (used in test mode)
@@ -188,8 +196,15 @@ def train(
     total_params = sum(p.numel() for p in model.parameters())
     print(f"\nModel size: {total_params/1e6:.2f}M parameters")
 
-    # Initialize optimizer
-    optimizer = AdamW(model.parameters())
+    # Initialize optimizer with smaller learning rate to avoid NaN
+    learning_rate = config.get('learning_rate', 3e-4)  # Smaller default LR
+    weight_decay = config.get('weight_decay', 0.1)
+    optimizer = AdamW(
+        model.parameters(),
+        lr=learning_rate,
+        weight_decay=weight_decay
+    )
+    print(f"Optimizer: AdamW (lr={learning_rate}, weight_decay={weight_decay})")
 
     # Extract training parameters from config
     batch_size = config.get('batch_size', 32)
@@ -214,8 +229,8 @@ def train(
 
     for iter in range(max_iter):
         # Get a batch of data
-        inputs, targets = dataloader(
-            dataset=tokenized_data,
+        # TODO(human): Replace the old dataloader call with dataloader_obj.get_batch()
+        inputs, targets = dataloader_obj.get_batch(
             batch_size=batch_size,
             context_length=context_length,
             device=str(device)
@@ -275,20 +290,69 @@ def train(
 
         # Normal training logic (when not in test mode)
         if not test_mode:
-            # TODO: Add forward pass, loss computation, backward pass, optimizer step
-            # This is where you would implement the actual training logic
-            # Example structure:
-            # logits = model(inputs)
-            # logits_flat = logits.view(-1, config['vocab_size'])
-            # targets_flat = targets.view(-1)
-            # loss = cross_entropy(logits_flat, targets_flat)
-            # optimizer.zero_grad()
-            # loss.backward()
-            # gradient_clipping(model.parameters(), max_norm=1.0)
-            # optimizer.step()
+            # Debug: Check inputs for NaN/Inf
+            if torch.isnan(inputs).any() or torch.isinf(inputs).any():
+                print(f"  WARNING: NaN/Inf in inputs at iteration {iter}")
+                print(f"    Inputs min: {inputs.min().item()}, max: {inputs.max().item()}")
 
-            if (iter + 1) % 10 == 0:
-                print(f"  Iteration {iter + 1}/{max_iter} completed")
+            # Forward pass
+            logits = model(inputs)
+
+            # Debug: Check logits for NaN/Inf
+            if torch.isnan(logits).any() or torch.isinf(logits).any():
+                print(f"  WARNING: NaN/Inf in logits at iteration {iter}")
+                print(f"    Logits min: {logits.min().item()}, max: {logits.max().item()}")
+                # Check model parameters
+                for name, param in model.named_parameters():
+                    if torch.isnan(param).any() or torch.isinf(param).any():
+                        print(f"    NaN/Inf in parameter: {name}")
+
+            # Reshape for loss computation
+            logits_flat = logits.view(-1, config['vocab_size'])
+            targets_flat = targets.view(-1)
+
+            # Compute loss
+            loss = cross_entropy(logits_flat, targets_flat)
+
+            # Debug: Check loss for NaN
+            if torch.isnan(loss) or torch.isinf(loss):
+                print(f"  WARNING: NaN/Inf loss at iteration {iter}")
+                print(f"    Logits stats: min={logits.min().item():.4f}, max={logits.max().item():.4f}, mean={logits.mean().item():.4f}")
+                print(f"    Targets stats: min={targets.min().item()}, max={targets.max().item()}")
+                print(f"    Unique targets: {targets.unique()[:10].tolist()}...")
+
+                # Check if targets are valid
+                invalid_targets = (targets_flat < 0) | (targets_flat >= config['vocab_size'])
+                if invalid_targets.any():
+                    print(f"    ERROR: Invalid target indices found!")
+                    print(f"    Invalid indices: {targets_flat[invalid_targets][:10].tolist()}")
+
+            # Backward pass
+            optimizer.zero_grad()
+            loss.backward()
+
+            # Debug: Check gradients before clipping
+            max_grad = 0
+            for param in model.parameters():
+                if param.grad is not None:
+                    grad_norm = param.grad.data.norm(2).item()
+                    max_grad = max(max_grad, grad_norm)
+                    if torch.isnan(param.grad).any() or torch.isinf(param.grad).any():
+                        print(f"    WARNING: NaN/Inf in gradients before clipping")
+
+            # Gradient clipping
+            gradient_clipping(model.parameters(), max_norm=1.0)
+
+            # Optimizer step
+            optimizer.step()
+
+            # Print progress with more detail
+            if (iter + 1) % 10 == 0 or iter == 0:
+                if torch.isnan(loss):
+                    print(f"  Iteration {iter + 1}/{max_iter} - Loss: NaN - Max grad before clip: {max_grad:.4f}")
+                else:
+                    print(f"  Iteration {iter + 1}/{max_iter} - Loss: {loss.item():.4f} - Max grad before clip: {max_grad:.4f}")
+
 
     if not test_mode:
         print("\nTraining completed!")
@@ -320,12 +384,20 @@ def main():
     training_config = {
         'batch_size': 4,  # Small batch for testing
         'max_iter': 100,
+        'learning_rate': 3e-4,  # Conservative learning rate
+        'weight_decay': 0.1,
         'context_length': model_config['context_length'],
         'vocab_size': model_config['vocab_size'],
     }
 
     # Data paths
-    train_data_path = "./data/TinyStoriesV2-GPT4-train.txt"
+    # For debugging: use environment variable to override dataset
+    # import os as os_module
+    default_data = "./data/TinyStoriesV2-GPT4-train.txt"
+    train_data_path = os.environ.get('TRAIN_DATA_PATH', default_data)
+
+    if train_data_path != default_data:
+        print(f"[DEBUG] Using custom data path: {train_data_path}")
 
     # ==============================================================================
     # SETUP
@@ -342,11 +414,13 @@ def main():
         special_tokens=["<|endoftext|>"]
     )
 
-    # Prepare data
-    tokenized_data = prepare_data(
+    # Prepare data (now returns a MemmapDataLoader)
+    dataloader = prepare_data(
         data_path=train_data_path,
         tokenizer=tokenizer,
-        context_length=model_config['context_length']
+        context_length=model_config['context_length'],
+        use_streaming=False,  # Set to True for very large datasets
+        cache_dir="./data_cache"
     )
 
     # ==============================================================================
@@ -372,17 +446,33 @@ def main():
     for key, value in model_config.items():
         print(f"  {key}: {value}")
 
+    # Check initial model parameters for NaN/Inf
+    print("\nChecking model initialization...")
+    has_nan = False
+    for name, param in model.named_parameters():
+        if torch.isnan(param).any() or torch.isinf(param).any():
+            print(f"  WARNING: NaN/Inf in initial parameter: {name}")
+            has_nan = True
+        # Check for very large initial values
+        if param.abs().max() > 10:
+            print(f"  WARNING: Large initial values in {name}: max={param.max().item():.4f}")
+
+    if not has_nan:
+        print("  ✓ Model initialization looks good (no NaN/Inf)")
+    else:
+        print("  ✗ Model has NaN/Inf in initial parameters!")
+
     # ==============================================================================
     # TRAINING
     # ==============================================================================
 
     # TEST MODE: Set to True to test dataloader, False for normal training
-    TEST_DATALOADER = True
+    TEST_DATALOADER = False
 
     # Run training
     train(
         model=model,
-        tokenized_data=tokenized_data,
+        dataloader_obj=dataloader,
         config=training_config,
         device=device,
         tokenizer=tokenizer if TEST_DATALOADER else None,  # Pass tokenizer for testing

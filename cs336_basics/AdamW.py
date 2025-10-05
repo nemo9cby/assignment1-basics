@@ -13,20 +13,21 @@ class AdamW(torch.optim.Optimizer):
 
     def step(self, closure: Optional[Callable] = None):
         loss = None if closure is None else closure()
-        
-        # Simple printing of param_groups
-        for i, group in enumerate(self.param_groups):
-            print(f"\n=== Param Group {i} ===")
-            print(f"Number of parameters: {len(group['params'])}")
-            print(f"Learning rate: {group['lr']}")
-            print(f"Betas: {group['betas']}")
-            print(f"Eps: {group['eps']}")
-            print(f"Weight decay: {group['weight_decay']}")
-            
-            # Print info about each parameter
-            for j, param in enumerate(group['params']):
-                print(f"  Param {j}: shape={param.shape}, dtype={param.dtype}")
-        
+
+        # Simple printing of param_groups - DISABLED for now
+        # for i, group in enumerate(self.param_groups):
+        #     print(f"\n=== Param Group {i} ===")
+        #     print(f"Number of parameters: {len(group['params'])}")
+        #     print(f"Learning rate: {group['lr']}")
+        #     print(f"Betas: {group['betas']}")
+        #     print(f"Eps: {group['eps']}")
+        #     print(f"Weight decay: {group['weight_decay']}")
+        #
+        #     # Print info about each parameter
+        #     for j, param in enumerate(group['params']):
+        #         print(f"  Param {j}: shape={param.shape}, dtype={param.dtype}")
+
+        for group in self.param_groups:
             for p in group["params"]:
                 if p.grad is None:
                     continue
