@@ -2,6 +2,59 @@
 
 All changes we make to the assignment code or PDF will be documented in this file.
 
+---
+
+## Student Implementation Progress
+
+### [2025-10-05] - Complete Training Infrastructure
+#### Added
+- **generate_text.py**: Text generation with nucleus sampling, top-k, and greedy decoding
+- **calculate_params.py**: Model parameter verification (17.58M parameters)
+- **Test suite**: 5 training tests + 2 checkpoint tests for validation
+- **EXPERIMENT_PLAN.md**: Comprehensive Section 7 experiment framework
+- **DEVELOPMENT_LOG.md**: Session-based development tracking
+- **.claude/commands/**: Custom slash commands for changelog updates
+
+#### Changed
+- **train.py**: Integrated checkpoint saving/loading with configurable intervals
+- Training confirmed working with stable configuration (LR: 3e-4)
+
+### [2025-10-04] - Training Loop & Critical Fixes
+#### Fixed
+- **Tokenizer vocab.json bug**: Swapped token_id and token_str parsing order
+- **NaN loss issue**: Reduced learning rate from 1e-3 to 3e-4
+
+#### Added
+- **MemmapDataLoader**: Memory-efficient data loading (82.6% memory reduction)
+- Training loop with dataloader verification
+- Checkpoint save/load functionality
+
+### [2025-09-30] - [2025-09-12] - Training Components
+#### Implemented
+- **[09-30]** Dataloader with development dependencies
+- **[09-12]** Gradient clipping for training stability
+- **[09-12]** Cosine learning rate scheduling
+- **[09-08]** AdamW optimizer from scratch
+- **[09-07]** Complete BPE tokenizer with special token handling
+
+### [2025-08-10] - [2025-08-11] - Model Architecture
+#### Implemented
+- **TransformerLM**: Complete language model
+- **Transformer Block**: With attention and feedforward
+- **Multi-Head Attention**: Two versions (sequential and parallel with RoPE)
+- **Cross Entropy**: Loss function implementation
+- **RoPE**: Rotary position embeddings
+
+### [2025-07-28] - [2025-08-09] - Foundation
+#### Implemented
+- **BPE**: Initial tokenizer that passed all tests
+- **Neural network utilities**: Core building blocks
+- **SwiGLU**: Activation function preparation
+
+---
+
+## Official Assignment Updates
+
 
 ## [1.0.5] 2025-04-15
 - code: Add submission script, fix typos
