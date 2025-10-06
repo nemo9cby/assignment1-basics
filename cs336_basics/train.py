@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Tuple, Optional
 from cs336_basics.model import TransformerLM
 from cs336_basics.AdamW import AdamW
-from cs336_basics.nn_utils import dataloader, cross_entropy, gradient_clipping
+from cs336_basics.nn_utils import dataloader, cross_entropy, gradient_clipping, save_checkpoint, load_checkpoint
 from cs336_basics.bpe.train_bpe import train_bpe, save_trained_tokenizer
 from cs336_basics.bpe.Tokenizer import Tokenizer
 from cs336_basics.memmap_dataloader import MemmapDataLoader, StreamingMemmapDataLoader
@@ -210,6 +210,11 @@ def train(
     batch_size = config.get('batch_size', 32)
     context_length = config['context_length']
     max_iter = config.get('max_iter', 100) if not test_mode else 1  # Only 1 iteration in test mode
+    checkpoint_dir = config.get('checkpoint_dir', './checkpoints')
+    checkpoint_interval = config.get('checkpoint_interval', 50)  # Save every N iterations
+
+    # Create checkpoint directory
+    os.makedirs(checkpoint_dir, exist_ok=True)
 
     print("\n" + "=" * 60)
     print("DATALOADER TEST" if test_mode else "TRAINING")
@@ -353,7 +358,17 @@ def train(
                 else:
                     print(f"  Iteration {iter + 1}/{max_iter} - Loss: {loss.item():.4f} - Max grad before clip: {max_grad:.4f}")
 
+            # Save checkpoint periodically
+            if (iter + 1) % checkpoint_interval == 0 or (iter + 1) == max_iter:
+                checkpoint_path = os.path.join(checkpoint_dir, f'checkpoint_iter_{iter+1}.pt')
+                save_checkpoint(model, optimizer, iter + 1, checkpoint_path)
+                print(f"  ✓ Checkpoint saved to {checkpoint_path}")
 
+                # Also save as latest checkpoint for easy access
+                latest_path = os.path.join(checkpoint_dir, 'checkpoint_latest.pt')
+                save_checkpoint(model, optimizer, iter + 1, latest_path)
+
+    
     if not test_mode:
         print("\nTraining completed!")
 
@@ -388,6 +403,8 @@ def main():
         'weight_decay': 0.1,
         'context_length': model_config['context_length'],
         'vocab_size': model_config['vocab_size'],
+        'checkpoint_dir': './checkpoints/tinystories',
+        'checkpoint_interval': 50,  # Save every 50 iterations
     }
 
     # Data paths
